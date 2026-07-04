@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "psstree"
+version = "0.1.0"
+description = "list process' PSS sorted descendingly within their parent-child hierarchy"
+authors = [{name="Anosrep Enilno"}]
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "textual>=8.1.1",
+]
+
+[project.urls]
+Repository = "https://github.com/anosrepenilno/psstree"
+
+[tool.setuptools.packages.find]
+where = ["src"]
