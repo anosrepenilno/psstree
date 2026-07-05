@@ -55,39 +55,33 @@ def get_indents(depths):
 
     assert min(depths) == 0
 
-    barriers = [(-1, size)]
-    for cur_depth in range(max(depths)+2):
-        new_barriers = []
-        for start, end in barriers:
-            if cur_depth > 1:
-                for idx in range(start, end):
-                    indents[idx][cur_depth-1].bottom = True
-                for idx in range(start+1, end+1):
-                    indents[idx][cur_depth-1].top = True
+    last_occurence = [None]*(max(depths) + 1)
 
-            last_idx = None
-            for idx in range(start+1, end):
-                if depths[idx] != cur_depth:
-                    continue
-                if last_idx is not None:
-                    new_barriers.append((last_idx, idx))
-                last_idx = idx
-                
-        barriers = new_barriers
+    for idx, depth in enumerate(depths):
+        if (
+            (last_occurence[depth] is not None) 
+            and 
+            (
+                (depth==0) 
+                or 
+                (last_occurence[depth] > last_occurence[depth-1])
+            )
+        ):
+            last = last_occurence[depth]
+            for i in range(last, idx):
+                indents[i][depth].bottom = True
+            for i in range(last+1, idx+1):
+                indents[i][depth].top = True
+        last_occurence[depth] = idx
 
     for idx, depth in enumerate(depths):
         indents[idx][depth].right = True
-        if depth == 0:
-            indents[idx][depth].left = True
 
     for idx in range(size-1):
         if depths[idx] < depths[idx+1]:
             assert depths[idx+1] == 1 + depths[idx]
             depth = depths[idx]
-            indents[idx][depth].bottom = True
-            indents[idx+1][depth+1].left = True
-            indents[idx+1][depth].top = True
-            indents[idx+1][depth].right = True
+            indents[idx+1][depth+1].top = True
 
     return [
         "".join([cell.char() for cell in indent])

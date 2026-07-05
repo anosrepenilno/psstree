@@ -13,10 +13,16 @@ __all__ = ["TreeApp"]
 
 def dfs(parent: "TreeNode", pid: int, mapping: "Mapping"):
     proc = mapping.PROCS[pid]
-    node = parent.add(
-        label=proc.label,
-        data=proc,
-    )
+    if len(proc.children) == 0:
+        node = parent.add_leaf(
+            label=proc.label,
+            data=proc,
+        )
+    else:
+        node = parent.add(
+            label=proc.label,
+            data=proc,
+        )
     for child in proc.children:
         dfs(node, child, mapping)
 
