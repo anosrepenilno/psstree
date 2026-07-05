@@ -1,20 +1,30 @@
 import os
-import subprocess
 from dataclasses import dataclass, field
-from typing import List, Dict, Set, Optional
+from typing import List, Dict, Set, Optional, Generic, TypeVar, ClassVar, Type
 
-@dataclass
-class Proc:
-    pid: int
-    ppid: int
-    comm: str
+
+T = TypeVar("T")
+
+@dataclass(kw_only=True)
+class BaseNode(Generic[T]):
+    id_: T
+    parent_id: T
     val: int
 
-    depth: int = 0
-    children: List[int] = field(default_factory=list)
-    traversal_order: List[str] = field(default_factory=list)
-    total: int = 0
-    label: str = "<??>"
+    depth: int = 0 # distance from root node
+    children: List[T] = field(default_factory=list) # `id_` of children
+    traversal_order: List[T] = field(default_factory=list) # dfs traversal order sorted w.r.t `total`
+    total: Optional[int] = None # if None, filled as sum of `val` of this subtree
+
+    title: ClassVar[str] = ""
+    
+    @property
+    def label(self):
+        raise NotImplementedError
+
+    @staticmethod
+    def generate_nodes():
+        raise NotImplementedError
 
 
 def get_indents(depths):
@@ -90,84 +100,68 @@ def get_indents(depths):
 
 
 class Mapping:
-    def __init__(self):
-        self.PROCS: Dict[int, Proc] = {}
-        self.ROOTS: List[int] = []
-        self.traversal_order: Optional[List[int]] = None
+    def __init__(self, node_cls: Type[BaseNode[T]], node_kwargs: Dict[str, str] = {}):
+        self.nodes: Dict[T, BaseNode[T]] = {}
+        self.roots: List[T] = []
+        self.traversal_order: Optional[List[T]] = None
+        self.title: str = "<??>"
         self.repr: str = "<??>"
 
-    def dfs(self, pid: int, depth: int, visited: Set[int], visiting: Set[int]):
-        if pid in visiting:
-            raise ValueError(f"circular reference \n{pid=}, {depth=}, {visited=}, {visiting=}, {self.ROOTS=}, {self.PROCS=}\n circular reference")
-        
-        if pid in visited:
-            raise ValueError(f"multiple parents \n{pid=}, {depth=}, {visited=}, {visiting=}, {self.ROOTS=}, {self.PROCS=}\n multiple parents")
+        self.node_cls: Type[BaseNode[T]] = node_cls
+        self.node_kwargs: Dict[str, str] = node_kwargs
 
-        visiting.add(pid)
-
-        proc = self.PROCS[pid]
+    def dfs(self, id_: T, depth: int, visited: Set[T], visiting: Set[T]):
+        if id_ in visiting:
+            raise ValueError(f"circular reference \n{id_=}, {depth=}, {visited=}, {visiting=}, {self.roots=}, {self.nodes=}\n circular reference")
         
-        for child in proc.children:
+        if id_ in visited:
+            raise ValueError(f"multiple parents \n{id_=}, {depth=}, {visited=}, {visiting=}, {self.roots=}, {self.nodes=}\n multiple parents")
+
+        visiting.add(id_)
+
+        node = self.nodes[id_]
+        
+        for child in node.children:
             self.dfs(child, depth+1, visited, visiting)
             
-        proc.depth = depth
-        proc.children.sort(key=lambda id: self.PROCS[id].total, reverse=True)
-        proc.traversal_order = sum((self.PROCS[child].traversal_order for child in proc.children), start=[pid])
-        proc.total = sum((self.PROCS[child].total for child in proc.children), start=proc.val)
-        proc.label = f"{proc.comm}({proc.pid}): {proc.val/1024:.2f}MB/{proc.total/1024:.2f}MB"
+        node.depth = depth
+        node.children.sort(key=lambda id: self.nodes[id].total, reverse=True)
+        node.traversal_order = sum((self.nodes[child].traversal_order for child in node.children), start=[id_])
+        if node.total is None:
+            node.total = sum((self.nodes[child].total for child in node.children), start=node.val)
 
-        visiting.remove(pid)
-        visited.add(pid)
+        visiting.remove(id_)
+        visited.add(id_)
 
 
     def create(self, repr=False):
-        self.PROCS.clear()
-        self.ROOTS.clear()
+        self.nodes.clear()
+        self.roots.clear()
 
-        lines = [
-            line.strip().split() 
-            for line in subprocess.check_output(
-                ["smem", "-c", "pid pss", "-H"], 
-                text=True
-            ).splitlines()
-            if line.strip()
-        ]
-        
-        PSSs = {int(line[0]): int(line[1]) for line in lines}
+        for node in self.node_cls.generate_nodes(**self.node_kwargs):
+            self.nodes[node.id_] = node
 
-        lines = [
-            line.strip().split(maxsplit=2) 
-            for line in subprocess.check_output(
-                ["ps", "-eo", "pid,ppid,comm", "--no-header"], 
-                text=True
-            ).splitlines() 
-            if line.strip()
-        ]
-
-        for pid, ppid, comm in lines:
-            pid = int(pid)
-            ppid = int(ppid)
-            if pid not in PSSs:
-                continue
-            self.PROCS[pid] = Proc(pid=pid, ppid=ppid, comm=comm, val=PSSs[pid])
-
-        for proc in self.PROCS.values():
-            if proc.ppid in self.PROCS:
-                self.PROCS[proc.ppid].children.append(proc.pid)
+        for node in self.nodes.values():
+            if node.parent_id in self.nodes:
+                self.nodes[node.parent_id].children.append(node.id_)
             else:
-                self.ROOTS.append(proc.pid)
+                self.roots.append(node.id_)
         
-        for root in self.ROOTS:
+        for root in self.roots:
             self.dfs(root, 0, set(), set())
 
-        self.ROOTS.sort(key=lambda pid: self.PROCS[pid].total, reverse=True)
-        self.traversal_order = sum((self.PROCS[root].traversal_order for root in self.ROOTS), start=[])
+        self.roots.sort(key=lambda pid: self.nodes[pid].total, reverse=True)
+        self.traversal_order = sum((self.nodes[root].traversal_order for root in self.roots), start=[])
 
-        if repr:
-            indents = get_indents([self.PROCS[pid].depth for pid in self.traversal_order])
-            
-            self.repr = "\n".join([
-                indent + self.PROCS[pid].label 
-                for indent, pid in zip(indents, self.traversal_order)
-            ])
+        self.title = self.node_cls.title
+
+        if not repr:
+            return
+        
+        indents = get_indents([self.nodes[pid].depth for pid in self.traversal_order])
+        
+        self.repr = "\n".join([self.title] + [
+            indent + self.nodes[pid].label 
+            for indent, pid in zip(indents, self.traversal_order)
+        ])
 

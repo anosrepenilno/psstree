@@ -3,7 +3,7 @@ from textual.app import App
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from utils import Mapping
+    from utils import Mapping, T
     from textual.widget._tree import TreeNode
     from textual.app import ComposeResult
 
@@ -11,20 +11,20 @@ __all__ = ["TreeApp"]
 
 
 
-def dfs(parent: "TreeNode", pid: int, mapping: "Mapping"):
-    proc = mapping.PROCS[pid]
-    if len(proc.children) == 0:
-        node = parent.add_leaf(
-            label=proc.label,
-            data=proc,
+def dfs(parent: "TreeNode", id_: "T", mapping: "Mapping"):
+    node = mapping.nodes[id_]
+    if len(node.children) == 0:
+        textual_node = parent.add_leaf(
+            label=node.label,
+            data=node,
         )
     else:
-        node = parent.add(
-            label=proc.label,
-            data=proc,
+        textual_node = parent.add(
+            label=node.label,
+            data=node,
         )
-    for child in proc.children:
-        dfs(node, child, mapping)
+    for child in node.children:
+        dfs(textual_node, child, mapping)
 
 
 class TreeApp(App):
@@ -46,8 +46,8 @@ class TreeApp(App):
 
     def compose(self) -> "ComposeResult":
         yield Header()
-        tree: Tree[str] = Tree(label="PSS (Proportional Set Size) `command(pid): <individual-PSS>/<total-PSS-including-all-children>`")
-        for root in self.mapping.ROOTS:
+        tree: Tree[str] = Tree(label=self.mapping.title)
+        for root in self.mapping.roots:
             dfs(tree.root, root, self.mapping)
         tree.root.expand()
         for node in tree.root.children:
