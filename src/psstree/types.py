@@ -20,7 +20,10 @@ class PSSNode(BaseNode[int]):
     def generate_nodes():
         import psutil
         for p in psutil.process_iter():
-            info = p.memory_full_info()
+            try:
+                info = p.memory_full_info()
+            except psutil.AccessDenied:
+                continue
             try:
                 parent_id = p.ppid()
             except:

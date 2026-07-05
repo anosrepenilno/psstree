@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "psstree"
-version = "0.2.0"
+version = "0.2.1"
 description = "list process' PSS sorted descendingly within their parent-child hierarchy. can also do same for disk-space usage"
 authors = [{name="Anosrep Enilno"}]
 readme = "README.md"
