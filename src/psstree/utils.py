@@ -1,6 +1,6 @@
 import os
 from dataclasses import dataclass, field
-from typing import List, Dict, Set, Optional, Generic, TypeVar, ClassVar, Type
+from typing import List, Dict, Set, Optional, Generic, TypeVar, ClassVar, Type, Tuple
 
 
 T = TypeVar("T")
@@ -18,6 +18,9 @@ class BaseNode(Generic[T]):
 
     title: ClassVar[str] = ""
     
+    expanded_label: bool = False
+    collapse_subtree: bool = False
+    
     @property
     def label(self):
         raise NotImplementedError
@@ -25,6 +28,13 @@ class BaseNode(Generic[T]):
     @staticmethod
     def generate_nodes():
         raise NotImplementedError
+
+    def on_copy(self) -> Tuple[str, str]:
+        """
+        when user sends ctrl+c on a node,
+        (what to copy, what to say has been copied)
+        """
+        return (self.label, "label")
 
 
 def get_indents(depths):
@@ -133,7 +143,22 @@ class Mapping:
         visiting.remove(id_)
         visited.add(id_)
 
-
+    def is_in_collapsed_subtree(self, id_: T):
+        """
+        only if `id_` is part of the *inside* of the collapsed subtree. 
+        the root of that subtree will return False. (unless ofcourde it too has a parent which collapses it)
+        """
+        node = self.nodes[id_]
+        id_ = node.parent_id
+        
+        while id_ in self.nodes:
+            node = self.nodes[id_]
+            if node.collapse_subtree:
+                return True
+            id_ = node.parent_id
+        
+        return False
+    
     def create(self, repr=False):
         self.nodes.clear()
         self.roots.clear()
@@ -157,11 +182,17 @@ class Mapping:
 
         if not repr:
             return
+
+        self.traversal_order = [
+            id_ 
+            for id_ in self.traversal_order
+            if not self.is_in_collapsed_subtree(id_)
+        ]
         
-        indents = get_indents([self.nodes[pid].depth for pid in self.traversal_order])
+        indents = get_indents([self.nodes[id_].depth for id_ in self.traversal_order])
         
         self.repr = "\n".join([self.title] + [
-            indent + self.nodes[pid].label 
-            for indent, pid in zip(indents, self.traversal_order)
+            indent + self.nodes[id_].label 
+            for indent, id_ in zip(indents, self.traversal_order)
         ])
 

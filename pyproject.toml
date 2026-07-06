@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "psstree"
-version = "0.2.1"
+version = "0.3.0"
 description = "list process' PSS sorted descendingly within their parent-child hierarchy. can also do same for disk-space usage"
 authors = [{name="Anosrep Enilno"}]
 readme = "README.md"
@@ -12,6 +12,7 @@ requires-python = ">=3.11"
 dependencies = [
     "textual>=8.1.1",
     "psutil>=7.2.2",
+    "pyperclip>=1.11",
 ]
 
 [project.urls]
