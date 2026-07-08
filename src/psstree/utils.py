@@ -113,8 +113,8 @@ class Mapping:
         self.nodes: Dict[T, BaseNode[T]] = {}
         self.roots: List[T] = []
         self.traversal_order: Optional[List[T]] = None
-        self.title: str = "<??>"
-        self.repr: str = "<??>"
+        self.title: Optional[str] = None
+        self.repr: Optional[str] = None
 
         self.node_cls: Type[BaseNode[T]] = node_cls
         self.node_kwargs: Dict[str, str] = node_kwargs
@@ -157,12 +157,20 @@ class Mapping:
             id_ = node.parent_id
         
         return False
-    
-    def create(self, repr=False, expand_root_labels=False):
+
+    def clear(self):
         self.nodes.clear()
         self.roots.clear()
-
+        self.traversal_order = None
+        self.title = None
+        self.repr = None
+    
+    def create(self):
         for node in self.node_cls.generate_nodes(**self.node_kwargs):
+            if node.id_ in self.nodes:
+                raise ValueError(
+                    f"generated duplicate id={node.id_} by {node=} when there is existing node={self.nodes[node.id_]}, call .clear() between successive .create() calls"
+                )
             self.nodes[node.id_] = node
 
         for node in self.nodes.values():
@@ -174,28 +182,27 @@ class Mapping:
         for root in self.roots:
             self.dfs(root, 0, set(), set())
 
-        self.roots.sort(key=lambda pid: self.nodes[pid].total, reverse=True)
+        self.sort_roots()
+
+        self.title: str = self.node_cls.title
+
+    def sort_roots(self):
+        self.roots.sort(key=lambda id_: self.nodes[id_].total, reverse=True)
         self.traversal_order = sum((self.nodes[root].traversal_order for root in self.roots), start=[])
 
-        self.title = self.node_cls.title
-
-        if expand_root_labels:
-            for root in self.roots:
-                self.nodes[root].expanded_label = True
-
-        if not repr:
-            return
-
-        self.traversal_order = [
-            id_ 
-            for id_ in self.traversal_order
-            if not self.is_in_collapsed_subtree(id_)
-        ]
+    def get_repr(self):
+        if self.repr is None:
+            traversal_order = [
+                id_ 
+                for id_ in self.traversal_order
+                if not self.is_in_collapsed_subtree(id_)
+            ]
+            
+            indents = get_indents([self.nodes[id_].depth for id_ in traversal_order])
+            
+            self.repr = "\n".join([self.title] + [
+                indent + self.nodes[id_].label 
+                for indent, id_ in zip(indents, traversal_order)
+            ])
         
-        indents = get_indents([self.nodes[id_].depth for id_ in self.traversal_order])
-        
-        self.repr = "\n".join([self.title] + [
-            indent + self.nodes[id_].label 
-            for indent, id_ in zip(indents, self.traversal_order)
-        ])
-
+        return self.repr

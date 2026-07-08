@@ -19,13 +19,13 @@ class PSSNode(BaseNode[int]):
     @property
     def label(self):
         suffix = ' '.join(self.cmd) if self.expanded_label else ""
-        return f"[{self.total/(1024*1024):.2f}MB] {self.comm}({self.id_}): `{self.val/(1024*1024):.2f}MB` {suffix}"
+        return f"[{self.total/1024:.2f}MB] {self.comm}({self.id_}): `{self.val/1024:.2f}MB` {suffix}"
 
     def on_select(self) -> Tuple[str, str]:
         """
         when user sends ctrl+e on a node, what to display
         """
-        return f"PID: {self.id_}, PPID: {self.parent_id}\nPSS (self / total-subtree): {self.val} B / {self.total} B\nnum-children: {len(self.children)}\nmem-info: {self.mem_info}\n({self.comm}) {' '.join(self.cmd)}"
+        return f"PID: {self.id_}, PPID: {self.parent_id}\nPSS (self / total-subtree): {self.val} kB / {self.total} kB\nnum-children: {len(self.children)}\nmem-info (in Bytes): {self.mem_info}\n({self.comm}) {' '.join(self.cmd)}"
 
     @staticmethod
     def is_kernel_thread(pid: int) -> bool:
@@ -73,7 +73,7 @@ class PSSNode(BaseNode[int]):
                 parent_id=parent_id,
                 comm=comm,
                 cmd=cmdline,
-                val=info.pss,
+                val=info.pss/1024,
                 expanded_label=expanded_label,
                 mem_info=info,
             )
@@ -147,7 +147,7 @@ class DUNode(BaseNode[str]):
                     try:
                         is_dir = os.path.isdir(path)
                     except FileNotFoundError:
-                        # maybe it was removed between du output and this check? idk man i'm just some dumbass why you readin ts
+                        # maybe it was removed between du output and this check? idk man i'm just some dumbass. why you readin ts
                         is_dir = False
 
                     collapse_subtree = (not include_all) and (is_dir) and DUNode.is_dir_unimportant(os.path.basename(path))
