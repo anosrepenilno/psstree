@@ -1,7 +1,6 @@
 from textual.widgets import Tree, Footer, Header
 from textual.app import App
 from textual.binding import Binding
-import pyperclip
 
 from typing import TYPE_CHECKING
 
@@ -34,8 +33,7 @@ def dfs(parent: "TreeNode", id_: "T", mapping: "Mapping", expand: bool):
 class TreeApp(App):
     BINDINGS = [
         ("q", "quit", "Quit"),
-        Binding("ctrl+c", "copy", "Copy", show=False),
-        Binding("unbound", "", "Copy", show=True, key_display="ctrl+c"), # just for displaying in footer
+        Binding("ctrl+e", "display", "Display", show=True),
     ]
 
     def __init__(
@@ -62,13 +60,10 @@ class TreeApp(App):
         yield tree
         yield Footer()
 
-    def action_copy(self):
+    def action_display(self):
         node = self.query_one(Tree).cursor_node
         if (node is not None) and (node.data is not None):
-            text, desc = node.data.on_copy()
-            try:
-                pyperclip.copy(text)
-                self.notify(f"Copied {desc} ({text}) to clipboard")
-            except pyperclip.PyperclipException as e:
-                self.notify(f"Could not copy {desc} ({text}) to clipboard: {repr(e)}", severity="error")
-    
+            text = node.data.on_select()
+            with self.suspend():
+                import subprocess
+                subprocess.run(["less"], input=text.encode())

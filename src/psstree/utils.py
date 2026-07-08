@@ -29,12 +29,11 @@ class BaseNode(Generic[T]):
     def generate_nodes():
         raise NotImplementedError
 
-    def on_copy(self) -> Tuple[str, str]:
+    def on_select(self) -> str:
         """
-        when user sends ctrl+c on a node,
-        (what to copy, what to say has been copied)
+        when user sends ctrl+e on a node, what to display
         """
-        return (self.label, "label")
+        return self.label
 
 
 def get_indents(depths):
@@ -159,7 +158,7 @@ class Mapping:
         
         return False
     
-    def create(self, repr=False):
+    def create(self, repr=False, expand_root_labels=False):
         self.nodes.clear()
         self.roots.clear()
 
@@ -179,6 +178,10 @@ class Mapping:
         self.traversal_order = sum((self.nodes[root].traversal_order for root in self.roots), start=[])
 
         self.title = self.node_cls.title
+
+        if expand_root_labels:
+            for root in self.roots:
+                self.nodes[root].expanded_label = True
 
         if not repr:
             return

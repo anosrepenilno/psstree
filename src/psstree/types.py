@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import ClassVar, Set, Tuple
+from typing import ClassVar, Set, Tuple, List, Any
 import os
 import sys
 from pathlib import Path
@@ -10,24 +10,22 @@ from .utils import BaseNode
 @dataclass(kw_only=True)
 class PSSNode(BaseNode[int]):
     comm: str
-    cmd: str
+    cmd: List[str]
+
+    mem_info: Any
 
     title: ClassVar[str] = 'Proportional Set Size (PSS) "[<total-PSS-including-all-children>] command-name(pid): `<individual-PSS>` <full-cmdline-args>"'
 
     @property
     def label(self):
         suffix = ' '.join(self.cmd) if self.expanded_label else ""
-        return f"[{self.total/1024:.2f}MB] {self.comm}({self.id_}): `{self.val/1024:.2f}MB` {suffix}"
+        return f"[{self.total/(1024*1024):.2f}MB] {self.comm}({self.id_}): `{self.val/(1024*1024):.2f}MB` {suffix}"
 
-    def on_copy(self) -> Tuple[str, str]:
+    def on_select(self) -> Tuple[str, str]:
         """
-        when user sends ctrl+c on a node,
-        (what to copy, what to say has been copied)
+        when user sends ctrl+e on a node, what to display
         """
-        return (
-            str(self.id_), 
-            "PID"
-        )
+        return f"PID: {self.id_}, PPID: {self.parent_id}\nPSS (self / total-subtree): {self.val} B / {self.total} B\nnum-children: {len(self.children)}\nmem-info: {self.mem_info}\n({self.comm}) {' '.join(self.cmd)}"
 
     @staticmethod
     def is_kernel_thread(pid: int) -> bool:
@@ -68,14 +66,24 @@ class PSSNode(BaseNode[int]):
             try:
                 cmdline = p.cmdline()
             except:
-                cmdline = "??"
+                cmdline = ["??"]
             
-            yield PSSNode(id_=p.pid, parent_id=parent_id, comm=comm, cmd=cmdline, val=info.pss/1024, expanded_label=expanded_label)
+            yield PSSNode(
+                id_=p.pid,
+                parent_id=parent_id,
+                comm=comm,
+                cmd=cmdline,
+                val=info.pss,
+                expanded_label=expanded_label,
+                mem_info=info,
+            )
 
 
 @dataclass(kw_only=True)
 class DUNode(BaseNode[str]):
     title: ClassVar[str] = 'Disk-Space usage "[<total-space-including-subdirs-recursively>] <path>"'
+
+    is_dir: bool
 
     UNIMPORTANT_DIRS: ClassVar[Set[str]] = {"site-packages", "__pycache__"}
     
@@ -94,19 +102,21 @@ class DUNode(BaseNode[str]):
             path = self.id_
         else:
             path = os.path.basename(self.id_)
-        if self.collapse_subtree and (len(self.children) > 0):
-            path = path+"/*"
+        if self.is_dir:
+            path = path + "/"
+            if self.collapse_subtree and (len(self.children) > 0):
+                path = path+"*"
         return f"[{self.val/1024:.3f}MB] {path}"
 
-    def on_copy(self) -> Tuple[str, str]:
+    def on_select(self) -> Tuple[str, str]:
         """
-        when user sends ctrl+c on a node,
-        (what to copy, what to say has been copied)
+        when user sends ctrl+e on a node, what to display
         """
-        return (
-            str(Path(self.id_).expanduser().resolve()), 
-            "absolute path"
-        )
+        abs_path = str(Path(self.id_).expanduser().resolve())
+        if self.is_dir:
+            abs_path = abs_path + f"/{{contains {len(self.children)} entries}}"
+            
+        return f"[{self.val} kB] {abs_path}"
 
     @staticmethod
     def generate_nodes(root_path: str, one_file_system: bool = True, expanded_label: bool = False, include_all: bool = False):
@@ -134,7 +144,13 @@ class DUNode(BaseNode[str]):
                     parent_path = os.path.dirname(path)
                     assert parent_path != path
 
-                    collapse_subtree = (not include_all) and DUNode.is_dir_unimportant(os.path.basename(path))
+                    try:
+                        is_dir = os.path.isdir(path)
+                    except FileNotFoundError:
+                        # maybe it was removed between du output and this check? idk man i'm just some dumbass why you readin ts
+                        is_dir = False
+
+                    collapse_subtree = (not include_all) and (is_dir) and DUNode.is_dir_unimportant(os.path.basename(path))
 
                     yield DUNode(
                         id_=path, 
@@ -143,6 +159,7 @@ class DUNode(BaseNode[str]):
                         total=int(size), 
                         expanded_label=expanded_label, 
                         collapse_subtree=collapse_subtree,
+                        is_dir=is_dir,
                     )
 
             rc = proc.wait()
