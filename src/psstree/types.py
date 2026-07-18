@@ -2,6 +2,7 @@ from dataclasses import dataclass
 from typing import ClassVar, Set, Tuple, List, Any, Dict
 import os
 import sys
+import shutil
 from pathlib import Path
 
 from .utils import BaseNode
@@ -151,7 +152,7 @@ class DUNode(BaseNode[str]):
             cmd.append("-x")
         cmd.append(root_path)
 
-        prefix = f"{MOVE_TO_START_OF_LINE}{CLEAR_LINE}{' '.join(cmd)} :"
+        prefix = f"{MOVE_TO_START_OF_LINE}{CLEAR_LINE}{' '.join(cmd)} : "
 
         with subprocess.Popen(
             cmd,
@@ -166,7 +167,10 @@ class DUNode(BaseNode[str]):
                 line = line.rstrip("\n")
 
                 if not DUNode.skip_du_progress_dump:
-                    print(prefix, line, end="", flush=True)
+                    text = prefix+line
+                    # after wrap-around earlier terminal-lines are not cleared by `CLEAR_LINE`
+                    truncate_length = shutil.get_terminal_size().columns - 1
+                    print(text[: truncate_length], end="", flush=True)
 
                 if line.strip():
                     size, path = line.strip().split(maxsplit=1)
