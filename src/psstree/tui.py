@@ -1,4 +1,5 @@
 from textual.widgets import Tree, Footer, Header
+from rich.text import Text
 from textual.app import App
 from textual.binding import Binding
 
@@ -13,21 +14,21 @@ __all__ = ["TreeApp"]
 
 
 
-def dfs(parent: "TreeNode", id_: "T", mapping: "Mapping", expand: bool):
+def add_child(parent: "TreeNode", id_: "T", mapping: "Mapping") -> "TreeNode":
     node = mapping.nodes[id_]
     if len(node.children) == 0:
         textual_node = parent.add_leaf(
             label=node.label,
-            data=node,
+            data={"children_populated": True, "underlying_node": node},
         )
     else:
         textual_node = parent.add(
             label=node.label,
-            data=node,
-            expand=(expand) and (not node.collapse_subtree),
+            data={"children_populated": False, "underlying_node": node},
+            expand=False,
         )
-    for child in node.children:
-        dfs(textual_node, child, mapping, expand)
+        # recursive addition of children is done lazily. just like after urbanisation in developed country's cities. sorry.
+    return textual_node
 
 
 class TreeApp(App):
@@ -39,24 +40,23 @@ class TreeApp(App):
     def __init__(
         self, 
         mapping: "Mapping",
-        expand: bool = False, 
         *args, 
         **kwargs
     ):
         super().__init__(*args, **kwargs)
         self.title = "Press q to quit"
         self.mapping = mapping
-        self.expand = expand
 
     def compose(self) -> "ComposeResult":
         yield Header()
-        tree: Tree[str] = Tree(label=self.mapping.title)
+        # rich.text.Text because textual tries to render stuff inside square brackets: []
+        tree: Tree[str] = Tree(label=Text(self.mapping.title))
         for root in self.mapping.roots:
-            dfs(tree.root, root, self.mapping, self.expand)
+            add_child(tree.root, root, self.mapping)
         tree.root.expand()
-        for node in tree.root.children:
-            if not node.data.collapse_subtree:
-                node.expand()
+        if len(tree.root.children) == 1:
+            # cosmetic
+            tree.root.children[0].expand()
         yield tree
         yield Footer()
 
@@ -67,3 +67,17 @@ class TreeApp(App):
             with self.suspend():
                 import subprocess
                 subprocess.run(["less"], input=text.encode())
+
+    def on_tree_node_expanded(self, event: Tree.NodeExpanded) -> None:
+        node = event.node
+
+        if node.data is None:
+            return
+
+        if node.data["children_populated"]:
+            return
+
+        node.data["children_populated"] = True
+
+        for child in node.data["underlying_node"].children:
+            add_child(node, child, self.mapping)

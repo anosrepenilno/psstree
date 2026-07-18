@@ -1,9 +1,33 @@
 import argparse
+from dataclasses import dataclass
+from typing import Optional
 
 from .utils import Mapping
 from .types import PSSNode, DUNode
 
-def main():
+
+@dataclass
+class PSSArgs:
+    include_shm: bool
+
+
+@dataclass
+class DUArgs:
+    root_path: str
+    include_all_dirs: bool
+
+
+@dataclass
+class Args:
+    # common args:
+    full_description: bool
+    display_tui: bool
+
+    pss_args: Optional[PSSArgs] = None
+    du_args: Optional[DUArgs] = None
+
+
+def parse_args():
     parser = argparse.ArgumentParser(description="""
     gets process' PSS via /proc/<PID>/smaps(_rollup), sorts it descendingly within their parent-child hierarchy, 
     and displays it in an interactive TUI with collapsible sections.
@@ -11,17 +35,10 @@ def main():
     """)
 
     parser.add_argument(
-        "--expand",
-        action="store_true",
-        default=False,
-        help="[TUI only] expand all collapsible sections at start"
-    )
-
-    parser.add_argument(
         "--full",
         action="store_true",
         default=False,
-        help="show full description"
+        help="show full description in labels"
     )
 
     parser.add_argument(
@@ -48,57 +65,92 @@ def main():
         "--all",
         action="store_true",
         default=False,
-        help="[du only] include content inside certain dirs: site-packages, and ones starting with '.' (like .git) [the dirs themselves are never omitted]"
+        help="[only matters for --raw --du] include content inside certain noisy/unimportant dirs: currently this includes site-packages, __pycache__, and ones starting with '.' (like .git). by default it is omitted (the dirs themselves are never omitted, just that they would be collapsed)"
     )
 
-    args = parser.parse_args()
+    cmdline_args = parser.parse_args()
 
-    if args.du is None:
-        if not args.raw:
-            args.full = True
-        mapping = Mapping(node_cls=PSSNode, node_kwargs={
-            "expanded_label": args.full,
-        })
+    args = Args(
+        full_description=cmdline_args.full,
+        display_tui=(not cmdline_args.raw),
+    )
+    if cmdline_args.du is None:
+        if args.display_tui:
+            args.full_description = True
+        args.pss_args = PSSArgs(
+            include_shm=cmdline_args.shm
+        )
     else:
-        mapping = Mapping(node_cls=DUNode, node_kwargs={
-            "root_path": args.du, 
-            "expanded_label": args.full, 
-            "include_all": args.all,
-        }) 
-    
-    mapping.clear()
-    mapping.create()
+        args.du_args = DUArgs(
+            root_path=cmdline_args.du,
+            include_all_dirs=cmdline_args.all
+        )
+        if args.display_tui:
+            args.du_args.include_all_dirs = True
 
-    if args.shm:
-        import psutil
-        for partition in psutil.disk_partitions(all=True):
-            if partition.fstype in {"tmpfs", "ramfs"}:
-                mapping_shm = Mapping(node_cls=DUNode, node_kwargs={
-                    "root_path": partition.mountpoint,
-                    "include_all": True,
-                })
-                mapping_shm.clear()
-                mapping_shm.create()
-                for id_, node in mapping_shm.nodes.items():
-                    if id_ in mapping.nodes:
-                        raise ValueError(
-                            f"generated duplicate id={id_} by {node=} when there is existing node={mapping.nodes[id_]}"
-                        )
-                    mapping.nodes[id_] = node
-                for root in mapping_shm.roots:
-                    mapping.roots.append(root)
-                    mapping.nodes[root].expanded_label = True
-        mapping.sort_roots()
+    return args
 
-    if args.du is not None:
-        for root in mapping.roots:
-            mapping.nodes[root].expanded_label = True
 
-    if args.raw:
-        print(mapping.get_repr(), flush=True)
+def main():
+    args: Args = parse_args()
+
+    mapping  = Mapping()
+
+    if args.pss_args is not None:
+        mapping.add_nodes(
+            node_cls=PSSNode, 
+            node_kwargs={
+                "full_description": args.full_description,
+            },
+            skip_sort_roots=args.pss_args.include_shm,
+        )
+        if args.pss_args.include_shm:
+            import psutil
+
+            mounts = sorted(
+                partition.mountpoint
+                for partition in psutil.disk_partitions(all=True)
+                if partition.fstype in {"tmpfs", "ramfs"}
+            )
+
+            for mount in mounts:
+                if mount in mapping.nodes:
+                    # if a child path is a separate mount entry than
+                    # a parent path but the parent path's `du -x` result
+                    # included the child path anyway, we just assume the 
+                    # parent path `du -x` is correct
+                    continue
+                mapping.add_nodes(
+                    node_cls=DUNode, 
+                        node_kwargs={
+                        "root_path": mount,
+                        "include_all_dirs": True,
+                    },
+                    skip_sort_roots=True,
+                )
+
+            mapping.sort_roots()
+
+    elif args.du_args is not None:
+        mapping.add_nodes(
+            node_cls=DUNode, 
+            node_kwargs={
+                "root_path": args.du_args.root_path, 
+                "full_description": args.full_description, 
+                "include_all_dirs": args.du_args.include_all_dirs,
+            },
+            skip_sort_roots=False,
+        ) 
     else:
+        return
+
+    mapping.update_total()
+
+    if args.display_tui:
         from .tui import TreeApp
-        app = TreeApp(mapping=mapping, expand=args.expand)
+        app = TreeApp(mapping=mapping)
         app.run()
+    else:
+        print(mapping.get_repr(), flush=True)
 
     

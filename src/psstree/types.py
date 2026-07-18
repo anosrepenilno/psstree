@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import ClassVar, Set, Tuple, List, Any
+from typing import ClassVar, Set, Tuple, List, Any, Dict
 import os
 import sys
 from pathlib import Path
@@ -18,7 +18,7 @@ class PSSNode(BaseNode[int]):
 
     @property
     def label(self):
-        suffix = ' '.join(self.cmd) if self.expanded_label else ""
+        suffix = ' '.join(self.cmd) if self.full_description else ""
         return f"[{self.total/1024:.2f}MB] {self.comm}({self.id_}): `{self.val/1024:.2f}MB` {suffix}"
 
     def on_select(self) -> Tuple[str, str]:
@@ -46,7 +46,7 @@ class PSSNode(BaseNode[int]):
             return False
     
     @staticmethod
-    def generate_nodes(expanded_label: bool = False):
+    def generate_nodes(full_description: bool = False):
         import psutil
         for p in psutil.process_iter():
             if PSSNode.is_kernel_thread(p.pid):
@@ -74,39 +74,54 @@ class PSSNode(BaseNode[int]):
                 comm=comm,
                 cmd=cmdline,
                 val=info.pss/1024,
-                expanded_label=expanded_label,
+                full_description=full_description,
                 mem_info=info,
             )
+
+
+UNIMPORTANT_DIRS: Set[str] = {"site-packages", "__pycache__"}
+ALLOWED_DIRS: Set[str] = {".", "..", "..."}
+
+# ANSI cursor movements:
+MOVE_TO_START_OF_LINE = "\r"
+CLEAR_LINE = "\033[2K"
 
 
 @dataclass(kw_only=True)
 class DUNode(BaseNode[str]):
     title: ClassVar[str] = 'Disk-Space usage "[<total-space-including-subdirs-recursively>] <path>"'
 
-    is_dir: bool
+    root_node_overrides: ClassVar[Dict[str, Any]] = {
+        "full_description": True,
+    }
 
-    UNIMPORTANT_DIRS: ClassVar[Set[str]] = {"site-packages", "__pycache__"}
+    is_dir: bool
     
     @staticmethod
     def is_dir_unimportant(name: str) -> bool:
-        if name in DUNode.UNIMPORTANT_DIRS:
+        if name in UNIMPORTANT_DIRS:
             return True
-        if name.startswith('.') and (set(name) != {'.'}):
+        if name and (name[0] == '.') and (name not in ALLOWED_DIRS):
             # allow . .. ... but not .git etc
             return True
         return False
 
     @property
     def label(self):
-        if self.expanded_label:
+        if self.full_description:
             path = self.id_
         else:
             path = os.path.basename(self.id_)
-        if self.is_dir:
-            path = path + "/"
+        
+        if self.is_dir and (path != "/"):
             if self.collapse_subtree and (len(self.children) > 0):
-                path = path+"*"
-        return f"[{self.val/1024:.3f}MB] {path}"
+                suffix = "/*"
+            else:
+                suffix = "/"
+        else:
+            suffix = ""
+
+        return f"[{self.val/1024:.3f}MB] {path}{suffix}"
 
     def on_select(self) -> Tuple[str, str]:
         """
@@ -119,13 +134,15 @@ class DUNode(BaseNode[str]):
         return f"[{self.val} kB] {abs_path}"
 
     @staticmethod
-    def generate_nodes(root_path: str, one_file_system: bool = True, expanded_label: bool = False, include_all: bool = False):
+    def generate_nodes(root_path: str, one_file_system: bool = True, full_description: bool = False, include_all_dirs: bool = False):
         import subprocess
 
         cmd = ["du", "-a"]
         if one_file_system:
             cmd.append("-x")
         cmd.append(root_path)
+
+        prefix = f"{MOVE_TO_START_OF_LINE}{CLEAR_LINE}{' '.join(cmd)} :"
 
         with subprocess.Popen(
             cmd,
@@ -138,10 +155,16 @@ class DUNode(BaseNode[str]):
 
             for line in proc.stdout:
                 line = line.rstrip("\n")
+
+                print(prefix, line, end="", flush=True)
+
                 if line.strip():
                     size, path = line.strip().split(maxsplit=1)
-                    path = path.rstrip("/")
-                    parent_path = os.path.dirname(path)
+                    if path != "/":
+                        path = path.rstrip("/")
+                        parent_path = os.path.dirname(path)
+                    else:
+                        parent_path = ""
                     assert parent_path != path
 
                     try:
@@ -150,14 +173,14 @@ class DUNode(BaseNode[str]):
                         # maybe it was removed between du output and this check? idk man i'm just some dumbass. why you readin ts
                         is_dir = False
 
-                    collapse_subtree = (not include_all) and (is_dir) and DUNode.is_dir_unimportant(os.path.basename(path))
+                    collapse_subtree = (not include_all_dirs) and (is_dir) and DUNode.is_dir_unimportant(os.path.basename(path))
 
                     yield DUNode(
                         id_=path, 
                         parent_id=parent_path, 
                         val=int(size), 
                         total=int(size), 
-                        expanded_label=expanded_label, 
+                        full_description=full_description, 
                         collapse_subtree=collapse_subtree,
                         is_dir=is_dir,
                     )
@@ -167,3 +190,5 @@ class DUNode(BaseNode[str]):
                 # allowing exit-code 1 since can mean du encountered a non-fatal error but still produced (partial) output
                 # for example when some deep subdir denies permission, the rest of the result is still shown without it
                 raise subprocess.CalledProcessError(rc, cmd)
+
+        print("")

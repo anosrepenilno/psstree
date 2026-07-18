@@ -1,6 +1,6 @@
 import os
 from dataclasses import dataclass, field
-from typing import List, Dict, Set, Optional, Generic, TypeVar, ClassVar, Type, Tuple
+from typing import List, Dict, Set, Optional, Generic, TypeVar, ClassVar, Type, Tuple, Any
 
 
 T = TypeVar("T")
@@ -18,8 +18,10 @@ class BaseNode(Generic[T]):
 
     title: ClassVar[str] = ""
     
-    expanded_label: bool = False
+    full_description: bool = False
     collapse_subtree: bool = False
+
+    root_node_overrides: ClassVar[Dict[str, Any]] = {}
     
     @property
     def label(self):
@@ -109,22 +111,19 @@ def get_indents(depths):
 
 
 class Mapping:
-    def __init__(self, node_cls: Type[BaseNode[T]], node_kwargs: Dict[str, str] = {}):
+    def __init__(self):
         self.nodes: Dict[T, BaseNode[T]] = {}
         self.roots: List[T] = []
         self.traversal_order: Optional[List[T]] = None
         self.title: Optional[str] = None
         self.repr: Optional[str] = None
 
-        self.node_cls: Type[BaseNode[T]] = node_cls
-        self.node_kwargs: Dict[str, str] = node_kwargs
-
     def dfs(self, id_: T, depth: int, visited: Set[T], visiting: Set[T]):
         if id_ in visiting:
-            raise ValueError(f"circular reference \n{id_=}, {depth=}, {visited=}, {visiting=}, {self.roots=}, {self.nodes=}\n circular reference")
+            raise ValueError(f"circular reference \n{id_=}, {depth=}, {visited=}, {visiting=}, {self.roots=}\n circular reference")
         
         if id_ in visited:
-            raise ValueError(f"multiple parents \n{id_=}, {depth=}, {visited=}, {visiting=}, {self.roots=}, {self.nodes=}\n multiple parents")
+            raise ValueError(f"multiple parents \n{id_=}, {depth=}, {visited=}, {visiting=}, {self.roots=}\n multiple parents")
 
         visiting.add(id_)
 
@@ -165,30 +164,44 @@ class Mapping:
         self.title = None
         self.repr = None
     
-    def create(self):
-        for node in self.node_cls.generate_nodes(**self.node_kwargs):
+    def add_nodes(self, node_cls: Type[BaseNode[T]], node_kwargs: Dict[str, str] = {}, skip_sort_roots: bool = False):
+        nodes = {}
+        roots = []
+        
+        for node in node_cls.generate_nodes(**node_kwargs):
             if node.id_ in self.nodes:
                 raise ValueError(
-                    f"generated duplicate id={node.id_} by {node=} when there is existing node={self.nodes[node.id_]}, call .clear() between successive .create() calls"
+                    f"generated duplicate id={node.id_} by {node=} when there is existing node={self.nodes[node.id_]}, however if this was expected, maybe you wanted to call .clear() between successive .add_nodes() calls?"
                 )
-            self.nodes[node.id_] = node
+            nodes[node.id_] = node
 
-        for node in self.nodes.values():
-            if node.parent_id in self.nodes:
-                self.nodes[node.parent_id].children.append(node.id_)
+        for node in nodes.values():
+            if node.parent_id in nodes:
+                nodes[node.parent_id].children.append(node.id_)
             else:
-                self.roots.append(node.id_)
+                roots.append(node.id_)
+                for k,v in node_cls.root_node_overrides.items():
+                    setattr(node, k, v)
+
+        self.nodes.update(nodes)
+        self.roots.extend(roots)
         
-        for root in self.roots:
+        for root in roots:
             self.dfs(root, 0, set(), set())
 
-        self.sort_roots()
+        if not skip_sort_roots:
+            self.sort_roots()
 
-        self.title: str = self.node_cls.title
+        if self.title is None:
+            self.title = node_cls.title
 
     def sort_roots(self):
         self.roots.sort(key=lambda id_: self.nodes[id_].total, reverse=True)
         self.traversal_order = sum((self.nodes[root].traversal_order for root in self.roots), start=[])
+
+    def update_total(self):
+        total = sum((self.nodes[root].total for root in self.roots), start=0)
+        self.title = f"[total {total/1024:.2f}MB] {self.title}"
 
     def get_repr(self):
         if self.repr is None:
