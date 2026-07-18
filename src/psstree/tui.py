@@ -63,7 +63,7 @@ class TreeApp(App):
     def action_display(self):
         node = self.query_one(Tree).cursor_node
         if (node is not None) and (node.data is not None):
-            text = node.data.on_select()
+            text = node.data["underlying_node"].on_select()
             with self.suspend():
                 import subprocess
                 subprocess.run(["less"], input=text.encode())

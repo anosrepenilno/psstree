@@ -91,6 +91,8 @@ CLEAR_LINE = "\033[2K"
 class DUNode(BaseNode[str]):
     title: ClassVar[str] = 'Disk-Space usage "[<total-space-including-subdirs-recursively>] <path>"'
 
+    skip_du_progress_dump: ClassVar[bool] = False
+
     root_node_overrides: ClassVar[Dict[str, Any]] = {
         "full_description": True,
     }
@@ -129,12 +131,19 @@ class DUNode(BaseNode[str]):
         """
         abs_path = str(Path(self.id_).expanduser().resolve())
         if self.is_dir:
-            abs_path = abs_path + f"/{{contains {len(self.children)} entries}}"
+            if abs_path != "/":
+                abs_path = abs_path + "/"
+            abs_path = abs_path + f"{{contains {len(self.children)} entries}}"
             
         return f"[{self.val} kB] {abs_path}"
 
     @staticmethod
-    def generate_nodes(root_path: str, one_file_system: bool = True, full_description: bool = False, include_all_dirs: bool = False):
+    def generate_nodes(
+        root_path: str, 
+        one_file_system: bool = True, 
+        full_description: bool = False, 
+        include_all_dirs: bool = False, 
+    ):
         import subprocess
 
         cmd = ["du", "-a"]
@@ -156,7 +165,8 @@ class DUNode(BaseNode[str]):
             for line in proc.stdout:
                 line = line.rstrip("\n")
 
-                print(prefix, line, end="", flush=True)
+                if not DUNode.skip_du_progress_dump:
+                    print(prefix, line, end="", flush=True)
 
                 if line.strip():
                     size, path = line.strip().split(maxsplit=1)
@@ -191,4 +201,5 @@ class DUNode(BaseNode[str]):
                 # for example when some deep subdir denies permission, the rest of the result is still shown without it
                 raise subprocess.CalledProcessError(rc, cmd)
 
-        print("")
+        if not DUNode.skip_du_progress_dump:
+            print("")

@@ -1,6 +1,8 @@
 import argparse
 from dataclasses import dataclass
 from typing import Optional
+import sys
+import os
 
 from .utils import Mapping
 from .types import PSSNode, DUNode
@@ -95,6 +97,13 @@ def main():
     args: Args = parse_args()
 
     mapping  = Mapping()
+
+    if not sys.stdout.isatty():
+        DUNode.skip_du_progress_dump = True
+    if os.environ.get("VHS")=="True":
+        # disabled for vhs because ansi characters don't work there idk
+        DUNode.skip_du_progress_dump = True
+
 
     if args.pss_args is not None:
         mapping.add_nodes(
