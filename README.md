@@ -15,6 +15,8 @@ options:
               never omitted, just that they would be collapsed)
 ```
 
+Demos (as of v0.5.2) :
+
 ![PSS Example](https://raw.githubusercontent.com/anosrepenilno/psstree/main/assets/pss.gif)
 
 

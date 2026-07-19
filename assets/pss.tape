@@ -68,8 +68,8 @@ Set Height 900
 
 
 Hide
-Type "bash -i" Enter
-Type "export VHS=True && clear" Enter
+Type "bash -i" Enter # for bash history
+Type "clear" Enter
 Show
 
 

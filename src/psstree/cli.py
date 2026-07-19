@@ -100,10 +100,6 @@ def main():
 
     if not sys.stdout.isatty():
         DUNode.skip_du_progress_dump = True
-    if os.environ.get("VHS")=="True":
-        # disabled for vhs because ansi characters don't work there idk
-        DUNode.skip_du_progress_dump = True
-
 
     if args.pss_args is not None:
         mapping.add_nodes(

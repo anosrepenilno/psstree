@@ -85,7 +85,7 @@ ALLOWED_DIRS: Set[str] = {".", "..", "..."}
 
 # ANSI cursor movements:
 MOVE_TO_START_OF_LINE = "\r"
-CLEAR_LINE = "\033[2K"
+CLEAR_REST_OF_LINE = "\033[K"
 
 
 @dataclass(kw_only=True)
@@ -152,7 +152,8 @@ class DUNode(BaseNode[str]):
             cmd.append("-x")
         cmd.append(root_path)
 
-        prefix = f"{MOVE_TO_START_OF_LINE}{CLEAR_LINE}{' '.join(cmd)} : "
+        if not DUNode.skip_du_progress_dump:
+            print(*cmd, flush=True)
 
         with subprocess.Popen(
             cmd,
@@ -166,14 +167,14 @@ class DUNode(BaseNode[str]):
             for line in proc.stdout:
                 line = line.rstrip("\n")
 
-                if not DUNode.skip_du_progress_dump:
-                    text = prefix+line
-                    # after wrap-around earlier terminal-lines are not cleared by `CLEAR_LINE`
-                    truncate_length = shutil.get_terminal_size().columns - 1
-                    print(text[: truncate_length], end="", flush=True)
-
                 if line.strip():
                     size, path = line.strip().split(maxsplit=1)
+
+                    if not DUNode.skip_du_progress_dump:
+                        # after wrap-around earlier terminal-lines are not cleared by `CLEAR_REST_OF_LINE`
+                        truncate_length = shutil.get_terminal_size().columns - 1
+                        print(f"{MOVE_TO_START_OF_LINE}{path[:truncate_length]}{CLEAR_REST_OF_LINE}", end="", flush=True)                        
+
                     if path != "/":
                         path = path.rstrip("/")
                         parent_path = os.path.dirname(path)
@@ -206,4 +207,4 @@ class DUNode(BaseNode[str]):
                 raise subprocess.CalledProcessError(rc, cmd)
 
         if not DUNode.skip_du_progress_dump:
-            print("")
+            print(f"{MOVE_TO_START_OF_LINE}{CLEAR_REST_OF_LINE}", end="", flush=True)
